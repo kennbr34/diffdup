@@ -7,10 +7,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <time.h>
+#include <signal.h>
 
 
 #define _FILE_OFFSET_BITS 64
-#define DEFAULT_BUFF_SIZE 256 * 1024
 #define MAX_FILE_NAME_SIZE PATH_MAX + NAME_MAX + 1
 
 struct configStruct {
@@ -26,11 +27,12 @@ struct optionsStruct {
     bool sourceDeviceGiven;
     bool destinationDeviceGiven;
     bool dataBufSizeGiven;
+    bool verifyWrites;
+    bool verifyIntegrity;
 };
 
 struct miscStruct {
     uint64_t returnVal;
-    uint64_t freadAmt;
 };
 
 struct dataStruct {
@@ -85,8 +87,10 @@ uint64_t pwriteFull(int device,
                     off_t deviceOffset,
                     struct dataStruct *st);
                     
-uint64_t fwriteWErrCheck(void *ptr, size_t size, size_t nmemb, FILE *stream, struct dataStruct *st);
+                    
 uint64_t getDeviceSize(const char *device);
+uint64_t greatestCommonDenominator(uint64_t a, uint64_t b);
+uint64_t leastCommonDenominator(uint64_t a, uint64_t b);
 uint8_t printSyntax(char *arg);
 void makeMultipleOf(size_t *numberToChange, size_t multiple);
 uint8_t printSyntax(char *arg);
@@ -98,3 +102,14 @@ void diffDup(int sourceDevice,
              int destinationDevice,
              uint64_t sourceDeviceSize,
              struct dataStruct *st);
+
+void installSignalHandlers(void);
+
+int  sigusr1Pending(void);
+int  sigintCount(void);
+void clearSigusr1(void);
+
+
+void printStats(uint64_t totalBytesRead,
+                uint64_t totalBytesWritten,
+                struct timespec startTime);

@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
+#include <signal.h>
 
 int main(int argc, char *argv[])
 {
@@ -11,10 +14,10 @@ int main(int argc, char *argv[])
         printSyntax(argv[0]);
         exit(EXIT_FAILURE);
     }
-
+    
+    installSignalHandlers();
+    
     struct dataStruct st = {0};
-
-    st.cryptSt.dataBufSize = DEFAULT_BUFF_SIZE;
 
     parseOptions(argc, argv, &st);
     
@@ -41,6 +44,42 @@ int main(int argc, char *argv[])
 	    PRINT_ERROR("Destination not large enough for source");
 	    close(sourceDevice);
 	    close(destinationDevice);
+	    exit(EXIT_FAILURE);
+	}
+	
+	uint64_t sourceLogicalBlockSize = 0;
+	uint64_t destinationLogicalBlockSize = 0;
+	
+	if (ioctl(sourceDevice, BLKSSZGET, &sourceLogicalBlockSize) != 0) {
+		PRINT_ERROR("Could not get source device's logical block size");
+	    PRINT_SYS_ERROR(errno);
+	    exit(EXIT_FAILURE);
+	}
+	
+	if (ioctl(destinationDevice, BLKSSZGET, &destinationLogicalBlockSize) != 0) {
+		PRINT_ERROR("Could not get destination device's logical block size");
+	    PRINT_SYS_ERROR(errno);
+	    exit(EXIT_FAILURE);
+	}
+	
+	uint64_t requiredAlignment =
+	    leastCommonDenominator(sourceLogicalBlockSize, destinationLogicalBlockSize);
+	
+	/* Enforce minimum alignment */
+	
+	if (st.cryptSt.dataBufSize < requiredAlignment) {
+	    st.cryptSt.dataBufSize = requiredAlignment;
+	} else {
+	    uint64_t remainder =
+	        st.cryptSt.dataBufSize % requiredAlignment;
+	
+	    if (remainder != 0) {
+	        st.cryptSt.dataBufSize -= remainder;
+	    }
+	}
+	
+	if (st.cryptSt.dataBufSize == 0) {
+	    PRINT_ERROR("dataBufSize resolved to zero after alignment");
 	    exit(EXIT_FAILURE);
 	}
     
