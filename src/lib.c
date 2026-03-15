@@ -8,20 +8,20 @@
 #define _GNU_SOURCE
 
 #include "lib.h"
-#include <getopt.h>
-#include <stdint.h>
-#include <string.h>
-#include <sys/sysinfo.h>
-#include <termios.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <linux/fs.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <time.h>
-#include <signal.h>
+#include <getopt.h>
 #include <inttypes.h>
+#include <linux/fs.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/sysinfo.h>
 #include <sys/uio.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
 
 size_t getBufSizeMultiple(char *value)
 {
@@ -37,11 +37,15 @@ size_t getBufSizeMultiple(char *value)
     /* value from getsubopt is not null-terminated so must copy and get the length manually without
      * string functions
      */
-    for (valueLength = 0; valueLength < MAX_DIGITS; valueLength++) {
-        if (isdigit(value[valueLength])) {
+    for (valueLength = 0; valueLength < MAX_DIGITS; valueLength++)
+    {
+        if (isdigit(value[valueLength]))
+        {
             valString[valueLength] = value[valueLength];
             continue;
-        } else if (isalpha(value[valueLength])) {
+        }
+        else if (isalpha(value[valueLength]))
+        {
             valString[valueLength] = value[valueLength];
             valueLength++;
             break;
@@ -63,13 +67,15 @@ size_t getBufSizeMultiple(char *value)
 uint64_t getDeviceSize(const char *deviceName)
 {
     int device = open(deviceName, O_RDONLY | O_CLOEXEC);
-    if (device < 0) {
+    if (device < 0)
+    {
         PRINT_SYS_ERROR(errno);
         exit(EXIT_FAILURE);
     }
 
     struct stat deviceStat;
-    if (fstat(device, &deviceStat) != 0) {
+    if (fstat(device, &deviceStat) != 0)
+    {
         PRINT_SYS_ERROR(errno);
         close(device);
         exit(EXIT_FAILURE);
@@ -77,19 +83,23 @@ uint64_t getDeviceSize(const char *deviceName)
 
     uint64_t deviceSize = 0;
 
-    if (S_ISREG(deviceStat.st_mode)) {
+    if (S_ISREG(deviceStat.st_mode))
+    {
 
         deviceSize = (uint64_t)deviceStat.st_size;
+    }
+    else if (S_ISBLK(deviceStat.st_mode))
+    {
 
-    } else if (S_ISBLK(deviceStat.st_mode)) {
-
-        if (ioctl(device, BLKGETSIZE64, &deviceSize) != 0) {
+        if (ioctl(device, BLKGETSIZE64, &deviceSize) != 0)
+        {
             PRINT_SYS_ERROR(errno);
             close(device);
             exit(EXIT_FAILURE);
         }
-
-    } else {
+    }
+    else
+    {
 
         fprintf(stderr, "Unsupported file type: %s\n", deviceName);
         close(device);
@@ -104,22 +114,26 @@ uint64_t getLogicalBlockSize(int device, const char *deviceName)
 {
     struct stat st;
 
-    if (fstat(device, &st) != 0) {
+    if (fstat(device, &st) != 0)
+    {
         PRINT_DEVICE_ERROR(deviceName, errno);
         exit(EXIT_FAILURE);
     }
 
-    if (S_ISBLK(st.st_mode)) {
+    if (S_ISBLK(st.st_mode))
+    {
 
         int logicalBlockSize = 0;
 
-        if (ioctl(device, BLKSSZGET, &logicalBlockSize) != 0) {
+        if (ioctl(device, BLKSSZGET, &logicalBlockSize) != 0)
+        {
             PRINT_ERROR("Could not get logical block size");
             PRINT_SYS_ERROR(errno);
             exit(EXIT_FAILURE);
         }
 
-        if (logicalBlockSize <= 0 || logicalBlockSize > 65536) {
+        if (logicalBlockSize <= 0 || logicalBlockSize > 65536)
+        {
             PRINT_ERROR("Kernel returned invalid logical block size");
             exit(EXIT_FAILURE);
         }
@@ -127,7 +141,8 @@ uint64_t getLogicalBlockSize(int device, const char *deviceName)
         return (uint64_t)logicalBlockSize;
     }
 
-    if (S_ISREG(st.st_mode)) {
+    if (S_ISREG(st.st_mode))
+    {
 
         /* Use filesystem block size */
         if (st.st_blksize > 0 && st.st_blksize <= 65536)
@@ -142,7 +157,8 @@ uint64_t getLogicalBlockSize(int device, const char *deviceName)
 
 uint64_t greatestCommonDenominator(uint64_t a, uint64_t b)
 {
-    while (b != 0) {
+    while (b != 0)
+    {
         uint64_t temp = b;
         b = a % b;
         a = temp;
@@ -218,14 +234,15 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
     uint64_t processed = 0;
 
     iov = malloc(sizeof(struct iovec) * buffers);
-    buf = malloc(sizeof(void*) * buffers);
+    buf = malloc(sizeof(void *) * buffers);
 
     if (!iov || !buf)
         return 0;
 
     size_t pageSize = getpagesize();
 
-    for (int i = 0; i < buffers; i++) {
+    for (int i = 0; i < buffers; i++)
+    {
 
         if (posix_memalign(&buf[i], pageSize, chunkSize) != 0)
             goto cleanup;
@@ -233,7 +250,7 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
         memset(buf[i], 0, chunkSize);
 
         iov[i].iov_base = buf[i];
-        iov[i].iov_len  = chunkSize;
+        iov[i].iov_len = chunkSize;
     }
 
     /* Avoid cached pages affecting benchmark */
@@ -247,7 +264,8 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
 
     double start = getTimeSec();
 
-    while (processed < totalBytes) {
+    while (processed < totalBytes)
+    {
 
         ssize_t r = readv(fd, iov, buffers);
 
@@ -264,8 +282,10 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
 
 cleanup:
 
-    if (buf) {
-        for (int i = 0; i < buffers; i++) {
+    if (buf)
+    {
+        for (int i = 0; i < buffers; i++)
+        {
             if (buf[i])
                 free(buf[i]);
         }
@@ -281,31 +301,30 @@ cleanup:
     return processed / (end - start);
 }
 
-
 void autoTuneIO(int fd, struct dataStruct *st)
 {
     size_t chunkOptions[] = {
-        64*1024,
-        128*1024,
-        256*1024
-    };
+        64 * 1024,
+        128 * 1024,
+        256 * 1024};
 
     int bufferOptions[] = {
         4,
-        8
-    };
+        8};
 
     double bestSpeed = 0;
     int bestChunkIndex = 0;
     int bestBufferIndex = 0;
-    
+
     int testIndex = 0;
 
     /* Disable kernel sequential heuristics */
     posix_fadvise(fd, 0, 0, POSIX_FADV_RANDOM);
 
-    for (int c = 0; c < 3; c++) {
-        for (int b = 0; b < 2; b++) {
+    for (int c = 0; c < 3; c++)
+    {
+        for (int b = 0; b < 2; b++)
+        {
 
             double speed =
                 benchmarkRead(fd,
@@ -316,18 +335,19 @@ void autoTuneIO(int fd, struct dataStruct *st)
             printf("Test: chunk=%zu buffers=%d -> %.2f MB/s\n",
                    chunkOptions[c],
                    bufferOptions[b],
-                   speed / (1024*1024));
+                   speed / (1024 * 1024));
 
-            if (speed > bestSpeed) {
+            if (speed > bestSpeed)
+            {
 
                 bestSpeed = speed;
                 bestChunkIndex = c;
                 bestBufferIndex = b;
 
-                if(st->optSt.dataBufSizeGiven == false)
+                if (st->optSt.dataBufSizeGiven == false)
                     st->cryptSt.dataBufSize = chunkOptions[bestChunkIndex];
 
-                if(st->optSt.numVectorsGiven == false)
+                if (st->optSt.numVectorsGiven == false)
                     st->cryptSt.numVectors = bufferOptions[bestBufferIndex];
             }
         }
@@ -348,7 +368,8 @@ void autoTuneIO(int fd, struct dataStruct *st)
     struct timespec start, endt;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    while (offset < end) {
+    while (offset < end)
+    {
 
         /* pipeline prefetch ~4 chunks ahead */
         off_t raOffset = offset + (chunk * 16);
@@ -371,7 +392,8 @@ void autoTuneIO(int fd, struct dataStruct *st)
 
     double improvement = raMBps / baselineMBps;
 
-    if (st->optSt.enableManualReadahead == true) {
+    if (st->optSt.enableManualReadahead == true)
+    {
 
         if (improvement >= 1.01)
             st->optSt.enableManualReadahead = true;
@@ -379,12 +401,12 @@ void autoTuneIO(int fd, struct dataStruct *st)
             st->optSt.enableManualReadahead = false;
     }
 
-    if(st->optSt.dataBufSizeGiven || st->optSt.numVectorsGiven)
+    if (st->optSt.dataBufSizeGiven || st->optSt.numVectorsGiven)
         printf("(USER CONFIGURED)");
 
     printf("\nSelected: chunk=%zu buffers=%d\n",
-        st->cryptSt.dataBufSize,
-        st->cryptSt.numVectors);
+           st->cryptSt.dataBufSize,
+           st->cryptSt.numVectors);
 
     printf("Detected throughput (baseline): %.2f MB/s\n", baselineMBps);
     printf("Detected throughput (manual readahead): %.2f MB/s\n", raMBps);
@@ -413,7 +435,8 @@ uint8_t printSyntax(char *arg)
 \n-n,--vector-num - number of I/O vectors\
 \n-b,--buffer-size - num[b|k|m]\
 \n\t Size of input/output buffers to use in bytes, kilobytes or megabytes\
-\n",arg);
+\n",
+           arg);
     return EXIT_FAILURE;
 }
 
@@ -425,14 +448,16 @@ uint64_t parseBufferSize(const char *arg)
 
     uint64_t value = strtoull(arg, &endptr, 10);
 
-    if (errno != 0 || value == 0) {
+    if (errno != 0 || value == 0)
+    {
         PRINT_ERROR("Invalid buffer size value");
         exit(EXIT_FAILURE);
     }
 
     uint64_t multiplier = 1;
 
-    if (*endptr != '\0') {
+    if (*endptr != '\0')
+    {
 
         if (strcasecmp(endptr, "b") == 0)
             multiplier = 1;
@@ -442,7 +467,8 @@ uint64_t parseBufferSize(const char *arg)
             multiplier = 1024ULL * 1024ULL;
         else if (strcasecmp(endptr, "g") == 0)
             multiplier = 1024ULL * 1024ULL * 1024ULL;
-        else {
+        else
+        {
             PRINT_ERROR("Invalid buffer size suffix (use b/k/m/g)");
             exit(EXIT_FAILURE);
         }
@@ -461,7 +487,8 @@ void parseOptions(
     char binName[MAX_FILE_NAME_SIZE];
     snprintf(binName, MAX_FILE_NAME_SIZE, "%s", argv[0]);
 
-    while (1) {
+    while (1)
+    {
         int option_index = 0;
         static struct option long_options[] = {
             {"help", no_argument, 0, 'h'},
@@ -483,7 +510,8 @@ void parseOptions(
         if (c == -1)
             break;
 
-        switch (c) {
+        switch (c)
+        {
 
         case 'h':
             printSyntax(binName);
@@ -505,59 +533,79 @@ void parseOptions(
             st->optSt.verifyAfter = true;
             break;
         case 's':
-            if (optarg[0] == '-' && strlen(optarg) == 2) {
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
                 fprintf(stderr, "Option -s requires an argument\n");
                 errflg++;
                 break;
-            } else {
+            }
+            else
+            {
                 st->optSt.sourceDeviceGiven = true;
                 st->deviceNameSt.sourceDeviceName = strdup(optarg);
             }
             break;
         case 'd':
-            if (optarg[0] == '-' && strlen(optarg) == 2) {
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
                 fprintf(stderr, "Option -d requires an argument\n");
                 errflg++;
                 break;
-            } else {
+            }
+            else
+            {
                 st->optSt.destinationDeviceGiven = true;
                 st->deviceNameSt.destinationDeviceName = strdup(optarg);
             }
             break;
         case 'r':
-            if (optarg[0] == '-' && strlen(optarg) == 2) {
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
                 fprintf(stderr, "Option -r requires an argument\n");
                 errflg++;
                 break;
-            } else {
-                if(strncasecmp(optarg,"yes",3) == 0 || strncasecmp(optarg,"on",3) == 0) {
-					st->optSt.enableManualReadahead = true;
-				} else if(strncasecmp(optarg,"no",3) == 0 ||  strncasecmp(optarg,"off",3) == 0) {
-					st->optSt.enableManualReadahead = false;
-				} else {
-					fprintf(stderr, "Value %s is not valid for option -r",optarg);
-					errflg++;
-				}
+            }
+            else
+            {
+                if (strncasecmp(optarg, "yes", 3) == 0 || strncasecmp(optarg, "on", 3) == 0)
+                {
+                    st->optSt.enableManualReadahead = true;
+                }
+                else if (strncasecmp(optarg, "no", 3) == 0 || strncasecmp(optarg, "off", 3) == 0)
+                {
+                    st->optSt.enableManualReadahead = false;
+                }
+                else
+                {
+                    fprintf(stderr, "Value %s is not valid for option -r", optarg);
+                    errflg++;
+                }
             }
             break;
         case 'n':
-            if (optarg[0] == '-' && strlen(optarg) == 2) {
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
                 fprintf(stderr, "Option -n requires an argument\n");
                 errflg++;
                 break;
-            } else {
-				st->optSt.numVectorsGiven = true;
+            }
+            else
+            {
+                st->optSt.numVectorsGiven = true;
                 st->cryptSt.numVectors = atol(optarg);
             }
             break;
         case 'b':
-            if (optarg[0] == '-' && strlen(optarg) == 2) {
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
                 fprintf(stderr, "Option -b requires an argument\n");
                 errflg++;
                 break;
-            } else {
+            }
+            else
+            {
                 st->optSt.dataBufSizeGiven = true;
-				st->cryptSt.dataBufSize = parseBufferSize(optarg);
+                st->cryptSt.dataBufSize = parseBufferSize(optarg);
             }
             break;
         case ':':
@@ -570,24 +618,28 @@ void parseOptions(
         }
     }
 
-    if (!st->optSt.sourceDeviceGiven || !st->optSt.destinationDeviceGiven) {
-	    fprintf(stderr, "Must specify a source and destination device\n");
-	    errflg++;
-	}
-	
-	/* Only compare if both were actually provided */
-	if (st->optSt.sourceDeviceGiven &&
-	    st->optSt.destinationDeviceGiven) {
-	
-	    if (strcmp(st->deviceNameSt.sourceDeviceName,
-	               st->deviceNameSt.destinationDeviceName) == 0) {
-	
-	        fprintf(stderr, "Source and destination device are the same\n");
-	        errflg++;
-	    }
-	}
+    if (!st->optSt.sourceDeviceGiven || !st->optSt.destinationDeviceGiven)
+    {
+        fprintf(stderr, "Must specify a source and destination device\n");
+        errflg++;
+    }
 
-    if (errflg) {
+    /* Only compare if both were actually provided */
+    if (st->optSt.sourceDeviceGiven &&
+        st->optSt.destinationDeviceGiven)
+    {
+
+        if (strcmp(st->deviceNameSt.sourceDeviceName,
+                   st->deviceNameSt.destinationDeviceName) == 0)
+        {
+
+            fprintf(stderr, "Source and destination device are the same\n");
+            errflg++;
+        }
+    }
+
+    if (errflg)
+    {
         printSyntax(binName);
         exit(EXIT_FAILURE);
     }

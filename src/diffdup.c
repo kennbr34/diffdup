@@ -4,20 +4,19 @@
  * Copyright (c) 2026 Kenneth Brown
  * Licensed under the MIT License.
  */
- 
-#define _GNU_SOURCE             /* See feature_test_macros(7) */
+
+#define _GNU_SOURCE /* See feature_test_macros(7) */
 #include "lib.h"
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <signal.h>
-#include <time.h>
-#include <inttypes.h>
 #include <sys/uio.h>
-#include <fcntl.h>
-
+#include <time.h>
 
 void diffDup(int sourceDevice,
              int destinationDevice,
@@ -25,119 +24,132 @@ void diffDup(int sourceDevice,
              struct dataStruct *st)
 {
     uint64_t remainingBytes = sourceDeviceSize;
-    uint64_t chunkSize      = st->cryptSt.dataBufSize;
+    uint64_t chunkSize = st->cryptSt.dataBufSize;
     size_t pageSize = getpagesize();
-	
-	const int VECTOR_WIDTH = st->cryptSt.numVectors;
-	uint8_t **inBuffer  = NULL;
-	uint8_t **outBuffer = NULL;
-	
-	inBuffer  = malloc(sizeof(uint8_t *) * VECTOR_WIDTH);
-	outBuffer = malloc(sizeof(uint8_t *) * VECTOR_WIDTH);
-	
-	if (!inBuffer || !outBuffer) {
-	    PRINT_SYS_ERROR(errno);
-	    PRINT_ERROR("Could not allocate buffer pointer arrays");
-	    exit(EXIT_FAILURE);
-	}
-	
-	for (int i = 0; i < VECTOR_WIDTH; i++) {
 
-	    if (posix_memalign((void**)&inBuffer[i], pageSize, chunkSize) != 0) {
-	        PRINT_SYS_ERROR(errno);
-	        PRINT_ERROR("Could not allocate memory input buffer");
-	        exit(EXIT_FAILURE);
-	    }
-	
-	    if (posix_memalign((void**)&outBuffer[i], pageSize, chunkSize) != 0) {
-	        PRINT_SYS_ERROR(errno);
-	        PRINT_ERROR("Could not allocate memory output buffer");
-	        exit(EXIT_FAILURE);
-	    }
-	
-	    memset(inBuffer[i], 0, chunkSize);
-	    memset(outBuffer[i], 0, chunkSize);
-	}
+    const int VECTOR_WIDTH = st->cryptSt.numVectors;
+    uint8_t **inBuffer = NULL;
+    uint8_t **outBuffer = NULL;
+
+    inBuffer = malloc(sizeof(uint8_t *) * VECTOR_WIDTH);
+    outBuffer = malloc(sizeof(uint8_t *) * VECTOR_WIDTH);
+
+    if (!inBuffer || !outBuffer)
+    {
+        PRINT_SYS_ERROR(errno);
+        PRINT_ERROR("Could not allocate buffer pointer arrays");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < VECTOR_WIDTH; i++)
+    {
+
+        if (posix_memalign((void **)&inBuffer[i], pageSize, chunkSize) != 0)
+        {
+            PRINT_SYS_ERROR(errno);
+            PRINT_ERROR("Could not allocate memory input buffer");
+            exit(EXIT_FAILURE);
+        }
+
+        if (posix_memalign((void **)&outBuffer[i], pageSize, chunkSize) != 0)
+        {
+            PRINT_SYS_ERROR(errno);
+            PRINT_ERROR("Could not allocate memory output buffer");
+            exit(EXIT_FAILURE);
+        }
+
+        memset(inBuffer[i], 0, chunkSize);
+        memset(outBuffer[i], 0, chunkSize);
+    }
 
     struct iovec *srcVec = NULL;
-	struct iovec *dstVec = NULL;
-	
-	srcVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
-	dstVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
-	
-	if (!srcVec || !dstVec) {
-	    PRINT_SYS_ERROR(errno);
-	    PRINT_ERROR("Could not allocate iovec arrays");
-	    exit(EXIT_FAILURE);
-	}
+    struct iovec *dstVec = NULL;
+
+    srcVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
+    dstVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
+
+    if (!srcVec || !dstVec)
+    {
+        PRINT_SYS_ERROR(errno);
+        PRINT_ERROR("Could not allocate iovec arrays");
+        exit(EXIT_FAILURE);
+    }
 
     off_t deviceOffset = 0;
 
-    uint64_t totalBytesRead    = 0;
+    uint64_t totalBytesRead = 0;
     uint64_t totalBytesWritten = 0;
 
     struct timespec startTime;
-    if (clock_gettime(CLOCK_MONOTONIC, &startTime) != 0) {
+    if (clock_gettime(CLOCK_MONOTONIC, &startTime) != 0)
+    {
         PRINT_SYS_ERROR(errno);
         PRINT_ERROR("clock_gettime failed");
         exit(EXIT_FAILURE);
     }
-    
+
     struct timespec lastPrintTime = startTime;
     struct timespec sourceTimer1, sourceTimer2;
-	struct timespec destinationTimer1, destinationTimer2;
-	
-	st->miscSt.sourceRaSt.raChunks = 8;
-	st->miscSt.sourceRaSt.lastLatency = 0;
-	
-	st->miscSt.destinationRaSt.raChunks = 8;
-	st->miscSt.destinationRaSt.lastLatency = 0;
+    struct timespec destinationTimer1, destinationTimer2;
+
+    st->miscSt.sourceRaSt.raChunks = 8;
+    st->miscSt.sourceRaSt.lastLatency = 0;
+
+    st->miscSt.destinationRaSt.raChunks = 8;
+    st->miscSt.destinationRaSt.lastLatency = 0;
 
     int gracefulStop = 0;
 
-    while (remainingBytes > 0) {
-		
-		/* ----- Periodic progress display (low-overhead) ----- */
+    while (remainingBytes > 0)
+    {
 
-		if (st->optSt.printProgress) {
+        /* ----- Periodic progress display (low-overhead) ----- */
 
-	    struct timespec now;
-	
-	    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
-	        PRINT_SYS_ERROR(errno);
-	        PRINT_ERROR("clock_gettime failed");
-	        exit(EXIT_FAILURE);
-	    }
-	
-	    if ((now.tv_sec - lastPrintTime.tv_sec) >= 1) {
-	
-	        fprintf(stderr,"\r\033[K");
-	
-	        printStats(totalBytesRead,
-	                   totalBytesWritten,
-	                   startTime);
-	
-	        fflush(stderr);
-	
-	        lastPrintTime = now;
-	    }
-	}
+        if (st->optSt.printProgress)
+        {
+
+            struct timespec now;
+
+            if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+            {
+                PRINT_SYS_ERROR(errno);
+                PRINT_ERROR("clock_gettime failed");
+                exit(EXIT_FAILURE);
+            }
+
+            if ((now.tv_sec - lastPrintTime.tv_sec) >= 1)
+            {
+
+                fprintf(stderr, "\r\033[K");
+
+                printStats(totalBytesRead,
+                           totalBytesWritten,
+                           startTime);
+
+                fflush(stderr);
+
+                lastPrintTime = now;
+            }
+        }
 
         /* ----- Signal Handling ----- */
 
-        if (sigusr1Pending()) {
+        if (sigusr1Pending())
+        {
             printStats(totalBytesRead,
                        totalBytesWritten,
                        startTime);
             clearSigusr1();
         }
 
-        if (sigintCount() == 1 && !gracefulStop) {
+        if (sigintCount() == 1 && !gracefulStop)
+        {
             PRINT_ERROR("\nInterrupt received, stopping after current block...\n");
             gracefulStop = 1;
         }
 
-        if (sigintCount() >= 2) {
+        if (sigintCount() >= 2)
+        {
             PRINT_ERROR("\nSecond interrupt received, exiting immediately.\n");
             exit(EXIT_FAILURE);
         }
@@ -149,7 +161,8 @@ void diffDup(int sourceDevice,
 
         int chunksThisIter = VECTOR_WIDTH;
 
-        if (remainingBytes < chunkSize * VECTOR_WIDTH) {
+        if (remainingBytes < chunkSize * VECTOR_WIDTH)
+        {
             chunksThisIter = remainingBytes / chunkSize;
 
             if (remainingBytes % chunkSize)
@@ -158,7 +171,8 @@ void diffDup(int sourceDevice,
 
         /* ----- Prepare iovecs ----- */
 
-        for (int i = 0; i < chunksThisIter; i++) {
+        for (int i = 0; i < chunksThisIter; i++)
+        {
 
             uint64_t thisChunk = chunkSize;
 
@@ -166,102 +180,108 @@ void diffDup(int sourceDevice,
                 thisChunk = remainingBytes - (i * chunkSize);
 
             srcVec[i].iov_base = inBuffer[i];
-            srcVec[i].iov_len  = thisChunk;
+            srcVec[i].iov_len = thisChunk;
 
             dstVec[i].iov_base = outBuffer[i];
-            dstVec[i].iov_len  = thisChunk;
+            dstVec[i].iov_len = thisChunk;
         }
-        
+
         /* ----- Vector read destination ----- */
 
-		clock_gettime(CLOCK_MONOTONIC, &destinationTimer1);
-		
-		ssize_t dstBytesRead = preadv(destinationDevice,
-		                              dstVec,
-		                              chunksThisIter,
-		                              deviceOffset);
-		
-		clock_gettime(CLOCK_MONOTONIC, &destinationTimer2);
-		
-		if (dstBytesRead < 0) {
-		    PRINT_SYS_ERROR(errno);
-		    PRINT_ERROR("\nCould not read from destination device\n");
-		    exit(EXIT_FAILURE);
-		}
+        clock_gettime(CLOCK_MONOTONIC, &destinationTimer1);
 
-		/* ----- Manual readahead for destination ----- */
-		
-		if (st->optSt.enableManualReadahead) {
-	
-		    adaptive_readahead(
-		        destinationDevice,
-		        &st->miscSt.destinationRaSt,
-		        destinationTimer1,
-		        destinationTimer2,
-		        chunkSize,
-		        chunksThisIter,
-		        remainingBytes,
-		        deviceOffset);
-		}
-	
-	
-		/* ----- Vector read source ----- */
-		
-		clock_gettime(CLOCK_MONOTONIC, &sourceTimer1);
-		
-		ssize_t srcBytesRead = preadv(sourceDevice,
-		                              srcVec,
-		                              chunksThisIter,
-		                              deviceOffset);
-		
-		clock_gettime(CLOCK_MONOTONIC, &sourceTimer2);
-		
-		if (srcBytesRead < 0) {
-		    PRINT_SYS_ERROR(errno);
-		    PRINT_ERROR("\nCould not read from source device\n");
-		    exit(EXIT_FAILURE);
-		}
-		
-		/* ----- Manual readahead for source ----- */
-		
-		if (st->optSt.enableManualReadahead) {
-	
-		    adaptive_readahead(
-		        sourceDevice,
-		        &st->miscSt.sourceRaSt,
-		        sourceTimer1,
-		        sourceTimer2,
-		        chunkSize,
-		        chunksThisIter,
-		        remainingBytes,
-		        deviceOffset);
-		}
+        ssize_t dstBytesRead = preadv(destinationDevice,
+                                      dstVec,
+                                      chunksThisIter,
+                                      deviceOffset);
+
+        clock_gettime(CLOCK_MONOTONIC, &destinationTimer2);
+
+        if (dstBytesRead < 0)
+        {
+            PRINT_SYS_ERROR(errno);
+            PRINT_ERROR("\nCould not read from destination device\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* ----- Manual readahead for destination ----- */
+
+        if (st->optSt.enableManualReadahead)
+        {
+
+            adaptive_readahead(
+                destinationDevice,
+                &st->miscSt.destinationRaSt,
+                destinationTimer1,
+                destinationTimer2,
+                chunkSize,
+                chunksThisIter,
+                remainingBytes,
+                deviceOffset);
+        }
+
+        /* ----- Vector read source ----- */
+
+        clock_gettime(CLOCK_MONOTONIC, &sourceTimer1);
+
+        ssize_t srcBytesRead = preadv(sourceDevice,
+                                      srcVec,
+                                      chunksThisIter,
+                                      deviceOffset);
+
+        clock_gettime(CLOCK_MONOTONIC, &sourceTimer2);
+
+        if (srcBytesRead < 0)
+        {
+            PRINT_SYS_ERROR(errno);
+            PRINT_ERROR("\nCould not read from source device\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* ----- Manual readahead for source ----- */
+
+        if (st->optSt.enableManualReadahead)
+        {
+
+            adaptive_readahead(
+                sourceDevice,
+                &st->miscSt.sourceRaSt,
+                sourceTimer1,
+                sourceTimer2,
+                chunkSize,
+                chunksThisIter,
+                remainingBytes,
+                deviceOffset);
+        }
 
         /* ----- Process each chunk ----- */
 
-        for (int i = 0; i < chunksThisIter; i++) {
+        for (int i = 0; i < chunksThisIter; i++)
+        {
 
             uint64_t thisChunk = srcVec[i].iov_len;
 
             totalBytesRead += thisChunk;
 
-           ssize_t mismatchIndex =
-			    findFirstMismatch(inBuffer[i], outBuffer[i], thisChunk);
-			
-			int blocksDiffer = (mismatchIndex >= 0);
+            ssize_t mismatchIndex =
+                findFirstMismatch(inBuffer[i], outBuffer[i], thisChunk);
 
-            if (blocksDiffer) {
+            int blocksDiffer = (mismatchIndex >= 0);
 
-                if (st->optSt.verifyIntegrity) {
+            if (blocksDiffer)
+            {
+
+                if (st->optSt.verifyIntegrity)
+                {
 
                     uint64_t absoluteOffset =
-					    deviceOffset + (i * chunkSize) + mismatchIndex;
-					
-					fprintf(stderr,
-					"Integrity check failed at absolute offset %" PRIu64
-					" (0x%016" PRIx64 ")\n",
-					absoluteOffset,
-					absoluteOffset);
+                        deviceOffset + (i * chunkSize) + mismatchIndex;
+
+                    fprintf(stderr,
+                            "Integrity check failed at absolute offset %" PRIu64
+                            " (0x%016" PRIx64 ")\n",
+                            absoluteOffset,
+                            absoluteOffset);
 
                     exit(EXIT_FAILURE);
                 }
@@ -270,7 +290,8 @@ void diffDup(int sourceDevice,
                                inBuffer[i],
                                thisChunk,
                                deviceOffset + (i * chunkSize),
-                               st) != 0) {
+                               st) != 0)
+                {
 
                     PRINT_SYS_ERROR(st->miscSt.returnVal);
                     PRINT_ERROR("Could not write to destination device");
@@ -279,69 +300,71 @@ void diffDup(int sourceDevice,
 
                 totalBytesWritten += thisChunk;
 
-                if (st->optSt.verifyWrites) {
+                if (st->optSt.verifyWrites)
+                {
 
-				    if (preadFull(destinationDevice,
-				                  outBuffer[i],
-				                  thisChunk,
-				                  deviceOffset + (i * chunkSize),
-				                  st) != 0) {
-				
-				        PRINT_SYS_ERROR(st->miscSt.returnVal);
-				        PRINT_ERROR("\nCould not re-read destination for verification\n");
-				        exit(EXIT_FAILURE);
-				    }
-				
-				    ssize_t mismatchIndex =
-				        findFirstMismatch(inBuffer[i],
-				                          outBuffer[i],
-				                          thisChunk);
-				
-				    if (mismatchIndex >= 0) {
-				
-				        uint64_t absoluteOffset =
-				            deviceOffset + (i * chunkSize) + mismatchIndex;
-				
-				        fprintf(stderr,
-					    "\nVerification failed at absolute offset %" PRIu64
-					    " (0x%016" PRIx64 ")\n"
-					    "Expected: 0x%02x  Found: 0x%02x\n",
-					    absoluteOffset,
-					    absoluteOffset,
-					    (unsigned char)inBuffer[i][mismatchIndex],
-					    (unsigned char)outBuffer[i][mismatchIndex]);
-				
-				        exit(EXIT_FAILURE);
-				    }
-				}
+                    if (preadFull(destinationDevice,
+                                  outBuffer[i],
+                                  thisChunk,
+                                  deviceOffset + (i * chunkSize),
+                                  st) != 0)
+                    {
+
+                        PRINT_SYS_ERROR(st->miscSt.returnVal);
+                        PRINT_ERROR("\nCould not re-read destination for verification\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    ssize_t mismatchIndex =
+                        findFirstMismatch(inBuffer[i],
+                                          outBuffer[i],
+                                          thisChunk);
+
+                    if (mismatchIndex >= 0)
+                    {
+
+                        uint64_t absoluteOffset =
+                            deviceOffset + (i * chunkSize) + mismatchIndex;
+
+                        fprintf(stderr,
+                                "\nVerification failed at absolute offset %" PRIu64
+                                " (0x%016" PRIx64 ")\n"
+                                "Expected: 0x%02x  Found: 0x%02x\n",
+                                absoluteOffset,
+                                absoluteOffset,
+                                (unsigned char)inBuffer[i][mismatchIndex],
+                                (unsigned char)outBuffer[i][mismatchIndex]);
+
+                        exit(EXIT_FAILURE);
+                    }
+                }
             }
 
             remainingBytes -= thisChunk;
         }
 
         deviceOffset += chunkSize * chunksThisIter;
-        
+
         size_t bytesProcessed = chunkSize * chunksThisIter;
 
-		posix_fadvise(sourceDevice,
-		              deviceOffset - bytesProcessed,
-		              bytesProcessed,
-		              POSIX_FADV_DONTNEED);
-		
-		posix_fadvise(destinationDevice,
-		              deviceOffset - bytesProcessed,
-		              bytesProcessed,
-		              POSIX_FADV_DONTNEED);
-		    }
-    
-    if (st->optSt.printProgress)
-		printf("\n");
+        posix_fadvise(sourceDevice,
+                      deviceOffset - bytesProcessed,
+                      bytesProcessed,
+                      POSIX_FADV_DONTNEED);
+
+        posix_fadvise(destinationDevice,
+                      deviceOffset - bytesProcessed,
+                      bytesProcessed,
+                      POSIX_FADV_DONTNEED);
+    }
 
     /* ----- Final sync ----- */
 
-    if (!st->optSt.verifyIntegrity && totalBytesWritten > 0) {
+    if (!st->optSt.verifyIntegrity && totalBytesWritten > 0)
+    {
 
-        if (fsync(destinationDevice) != 0) {
+        if (fsync(destinationDevice) != 0)
+        {
             PRINT_SYS_ERROR(errno);
             PRINT_ERROR("\nfsync failed on destination device\n");
             exit(EXIT_FAILURE);
@@ -353,19 +376,22 @@ void diffDup(int sourceDevice,
     printStats(totalBytesRead,
                totalBytesWritten,
                startTime);
+               printf("\n");
 
-    for (int i = 0; i < VECTOR_WIDTH; i++) {
-	    DDFREE(free, inBuffer[i]);
-	    DDFREE(free, outBuffer[i]);
-	}
-	
-	DDFREE(free, inBuffer);
-	DDFREE(free, outBuffer);
-	
-	DDFREE(free, srcVec);
-	DDFREE(free, dstVec);
+    for (int i = 0; i < VECTOR_WIDTH; i++)
+    {
+        DDFREE(free, inBuffer[i]);
+        DDFREE(free, outBuffer[i]);
+    }
 
-    if (st->optSt.verifyIntegrity) {
+    DDFREE(free, inBuffer);
+    DDFREE(free, outBuffer);
+
+    DDFREE(free, srcVec);
+    DDFREE(free, dstVec);
+
+    if (st->optSt.verifyIntegrity)
+    {
         printf("\nIntegrity verification completed successfully.\n");
     }
 }
