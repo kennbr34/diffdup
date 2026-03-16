@@ -23,46 +23,6 @@
 #include <time.h>
 #include <unistd.h>
 
-size_t getBufSizeMultiple(char *value)
-{
-
-#define MAX_DIGITS 13
-    char valString[MAX_DIGITS] = {0};
-    /* Compiling without optimization results in extremely slow speeds, but this will be optimized
-     * out if not set to volatile.
-     */
-    volatile int valueLength = 0;
-    volatile int multiple = 1;
-
-    /* value from getsubopt is not null-terminated so must copy and get the length manually without
-     * string functions
-     */
-    for (valueLength = 0; valueLength < MAX_DIGITS; valueLength++)
-    {
-        if (isdigit(value[valueLength]))
-        {
-            valString[valueLength] = value[valueLength];
-            continue;
-        }
-        else if (isalpha(value[valueLength]))
-        {
-            valString[valueLength] = value[valueLength];
-            valueLength++;
-            break;
-        }
-    }
-
-    if (valString[valueLength - 1] == 'b' || valString[valueLength - 1] == 'B')
-        multiple = 1;
-    if (valString[valueLength - 1] == 'k' || valString[valueLength - 1] == 'K')
-        multiple = 1024;
-    if (valString[valueLength - 1] == 'm' || valString[valueLength - 1] == 'M')
-        multiple = 1024 * 1024;
-    if (valString[valueLength - 1] == 'g' || valString[valueLength - 1] == 'G')
-        multiple = 1024 * 1024 * 1024;
-
-    return multiple;
-}
 
 uint64_t getDeviceSize(const char *deviceName)
 {
@@ -422,7 +382,7 @@ uint8_t printSyntax(char *arg)
 {
     printf("\
 \nUse: \
-\n\n%s -s source -d destination [-p|-t|-i|-w|-v|-r] [-n num] [-b num[b|k|m]]\
+\n\n%s -s source -d destination [-p|-t|-i|-w|-v|-r] [-n num] [-b num[b|k|m|g]\
 \n-p,--progress - periodically print progress\
 \n-t,--tune-parameters - automatically benchmark and set optimal buffer sizes and I/O vectors and enable readahead for non-USB devices\
 \n-i,--verify-integrity - verify that destination matches source\
@@ -433,8 +393,8 @@ uint8_t printSyntax(char *arg)
 \n\tThe following options will override default or auto-tuned parameters\
 \n-r,--toggle-readahead [yes|no|on|off] - toggle manual eadahead\
 \n-n,--vector-num - number of I/O vectors\
-\n-b,--buffer-size - num[b|k|m]\
-\n\t Size of input/output buffers to use in bytes, kilobytes or megabytes\
+\n-b,--buffer-size - num[b|k|m|g]\
+\n\t Size of input/output buffers to use in bytes, kilobytes, megabytes, or gigabytes\
 \n",
            arg);
     return EXIT_FAILURE;
@@ -467,9 +427,11 @@ uint64_t parseBufferSize(const char *arg)
             multiplier = 1024ULL * 1024ULL;
         else if (strcasecmp(endptr, "g") == 0)
             multiplier = 1024ULL * 1024ULL * 1024ULL;
+        else if (strcasecmp(endptr, "t") == 0)
+            multiplier = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
         else
         {
-            PRINT_ERROR("Invalid buffer size suffix (use b/k/m/g)");
+            PRINT_ERROR("Invalid buffer size suffix (use b/k/m/g/t)");
             exit(EXIT_FAILURE);
         }
     }
