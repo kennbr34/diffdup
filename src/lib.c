@@ -23,7 +23,6 @@
 #include <time.h>
 #include <unistd.h>
 
-
 uint64_t getDeviceSize(const char *deviceName)
 {
     int device = open(deviceName, O_RDONLY | O_CLOEXEC);
@@ -382,7 +381,7 @@ uint8_t printSyntax(char *arg)
 {
     printf("\
 \nUse: \
-\n\n%s -s source -d destination [-p|-t|-i|-w|-v|-r] [-n num] [-b num[b|k|m|g]\
+\n\n%s -s source -d destination [-p|-t|-i|-w|-v|-r] [-n num] [-b num[b|k|m|g] [-S|-D|-C num[b|k|m|g|t]]\
 \n-p,--progress - periodically print progress\
 \n-t,--tune-parameters - automatically benchmark and set optimal buffer sizes and I/O vectors and enable readahead for non-USB devices\
 \n-i,--verify-integrity - verify that destination matches source\
@@ -395,6 +394,12 @@ uint8_t printSyntax(char *arg)
 \n-n,--vector-num - number of I/O vectors\
 \n-b,--buffer-size - num[b|k|m|g]\
 \n\t Size of input/output buffers to use in bytes, kilobytes, megabytes, or gigabytes\
+\n-S,--source-start - num[b|k|m|g|t]\
+\n\t The start of source device to begin duplicating from, given in kilobytes, megabytes, gigabytes or terabytes\
+\n-D,--destination-start - num[b|k|m|g|t]\
+\n\t The start of destination device to begin duplicating to, given in kilobytes, megabytes, gigabytes or terabytes\
+\n-C,--output-amount - num[b|k|m|g|t]\
+\n\t The amount of source to duplicate to destination, given in bytes, kilobytes, megabytes, gigabytes or terabytes\
 \n",
            arg);
     return EXIT_FAILURE;
@@ -465,9 +470,12 @@ void parseOptions(
             {"toggle-readahead", required_argument, 0, 'r'},
             {"vector-num", required_argument, 0, 'n'},
             {"buffer-size", required_argument, 0, 'b'},
+            {"source-start", required_argument, 0, 'S'},
+            {"destination-start", required_argument, 0, 'D'},
+            {"output-amount", required_argument, 0, 'C'},
             {0, 0, 0, 0}};
 
-        c = getopt_long(argc, argv, "hptivws:d:r:n:b:",
+        c = getopt_long(argc, argv, "hptivws:d:r:n:b:S:D:C:",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -568,6 +576,45 @@ void parseOptions(
             {
                 st->optSt.dataBufSizeGiven = true;
                 st->cryptSt.dataBufSize = parseBufferSize(optarg);
+            }
+            break;
+        case 'S':
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
+                fprintf(stderr, "Option -S requires an argument\n");
+                errflg++;
+                break;
+            }
+            else
+            {
+                st->optSt.sourceStartGiven = true;
+                st->cryptSt.sourceDeviceStart = parseBufferSize(optarg);
+            }
+            break;
+        case 'D':
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
+                fprintf(stderr, "Option -D requires an argument\n");
+                errflg++;
+                break;
+            }
+            else
+            {
+                st->optSt.destinationStartGiven = true;
+                st->cryptSt.destinationDeviceStart = parseBufferSize(optarg);
+            }
+            break;
+        case 'C':
+            if (optarg[0] == '-' && strlen(optarg) == 2)
+            {
+                fprintf(stderr, "Option -C requires an argument\n");
+                errflg++;
+                break;
+            }
+            else
+            {
+                st->optSt.outputAmountGiven = true;
+                st->cryptSt.outputAmount = parseBufferSize(optarg);
             }
             break;
         case ':':

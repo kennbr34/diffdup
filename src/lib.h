@@ -28,6 +28,9 @@
 
 struct configStruct
 {
+    size_t sourceDeviceStart;
+    size_t destinationDeviceStart;
+    size_t outputAmount;
     size_t dataBufSize;
     int numVectors;
 };
@@ -41,9 +44,12 @@ struct deviceNames
 struct optionsStruct
 {
     bool sourceDeviceGiven;
+    bool sourceStartGiven;
     bool destinationDeviceGiven;
+    bool destinationStartGiven;
     bool dataBufSizeGiven;
     bool numVectorsGiven;
+    bool outputAmountGiven;
     bool verifyWrites;
     bool verifyIntegrity;
     bool verifyAfter;

@@ -61,10 +61,10 @@ int main(int argc, char *argv[])
             exit(EXIT_FAILURE);
         }
 
-        printf("Automatically tuning best parameters for source...\n");
+        printf("\nAutomatically tuning best parameters for source...\n");
         autoTuneIO(sourceDevice, &st);
 
-        printf("Automatically tuning best parametersfor destination...\n");
+        printf("\nAutomatically tuning best parametersfor destination...\n");
         autoTuneIO(destinationDevice, &st);
         close(sourceDevice);
         close(destinationDevice);
@@ -79,7 +79,14 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    lseek(sourceDevice, 0, SEEK_SET);
+    if (st.optSt.sourceStartGiven == true)
+    {
+        lseek(sourceDevice, st.cryptSt.sourceDeviceStart, SEEK_SET);
+    }
+    else
+    {
+        lseek(sourceDevice, 0L, SEEK_SET);
+    }
 
     destinationDevice = open(st.deviceNameSt.destinationDeviceName, O_RDWR | O_CLOEXEC);
     if (destinationDevice < 0)
@@ -89,7 +96,14 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    lseek(destinationDevice, 0, SEEK_SET);
+    if (st.optSt.destinationStartGiven == true)
+    {
+        lseek(destinationDevice, st.cryptSt.destinationDeviceStart, SEEK_SET);
+    }
+    else
+    {
+        lseek(destinationDevice, 0L, SEEK_SET);
+    }
 
     /* ----- Verify source and destination aren't the same ----- */
 
@@ -148,6 +162,19 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    /* ----- Make sure not seeking past end of source ----- */
+
+    uint64_t available = sourceDeviceSize - st.cryptSt.sourceDeviceStart;
+
+    if (st.optSt.outputAmountGiven &&
+        st.cryptSt.outputAmount > available)
+    {
+        PRINT_ERROR("Requested amount exceeds available bytes from source offset");
+        close(sourceDevice);
+        close(destinationDevice);
+        exit(EXIT_FAILURE);
+    }
+
     /* ----- Get block sizes ----- */
 
     uint64_t sourceLogicalBlockSize =
@@ -191,7 +218,7 @@ int main(int argc, char *argv[])
 
     if (st.optSt.verifyAfter)
     {
-        printf("Verifying written data...\n");
+        printf("\nVerifying written data...\n");
 
         st.optSt.verifyIntegrity = true;
         st.optSt.verifyWrites = false;

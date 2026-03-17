@@ -23,7 +23,18 @@ void diffDup(int sourceDevice,
              uint64_t sourceDeviceSize,
              struct dataStruct *st)
 {
-    uint64_t remainingBytes = sourceDeviceSize;
+    uint64_t available = sourceDeviceSize - st->cryptSt.sourceDeviceStart;
+
+    uint64_t remainingBytes;
+
+    if (st->optSt.outputAmountGiven)
+        remainingBytes = st->cryptSt.outputAmount;
+    else
+        remainingBytes = available;
+
+    if (remainingBytes > available)
+        remainingBytes = available;
+
     uint64_t chunkSize = st->cryptSt.dataBufSize;
     size_t pageSize = getpagesize();
 
@@ -75,7 +86,17 @@ void diffDup(int sourceDevice,
         exit(EXIT_FAILURE);
     }
 
-    off_t deviceOffset = 0;
+    off_t sourceDeviceOffset = 0;
+    if (st->optSt.sourceStartGiven == true)
+    {
+        sourceDeviceOffset = st->cryptSt.sourceDeviceStart;
+    }
+
+    off_t destinationDeviceOffset = 0;
+    if (st->optSt.destinationStartGiven == true)
+    {
+        destinationDeviceOffset = st->cryptSt.destinationDeviceStart;
+    }
 
     uint64_t totalBytesRead = 0;
     uint64_t totalBytesWritten = 0;
@@ -190,19 +211,21 @@ void diffDup(int sourceDevice,
 
         clock_gettime(CLOCK_MONOTONIC, &destinationTimer1);
 
-        ssize_t dstBytesRead = preadv(destinationDevice,
-                                      dstVec,
-                                      chunksThisIter,
-                                      deviceOffset);
+        for (int i = 0; i < chunksThisIter; i++)
+        {
+            if (preadFull(destinationDevice,
+                          outBuffer[i],
+                          dstVec[i].iov_len,
+                          destinationDeviceOffset + (i * chunkSize),
+                          st) != 0)
+            {
+                PRINT_SYS_ERROR(st->miscSt.returnVal);
+                PRINT_ERROR("\nCould not read from destination device\n");
+                exit(EXIT_FAILURE);
+            }
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &destinationTimer2);
-
-        if (dstBytesRead < 0)
-        {
-            PRINT_SYS_ERROR(errno);
-            PRINT_ERROR("\nCould not read from destination device\n");
-            exit(EXIT_FAILURE);
-        }
 
         /* ----- Manual readahead for destination ----- */
 
@@ -217,26 +240,28 @@ void diffDup(int sourceDevice,
                 chunkSize,
                 chunksThisIter,
                 remainingBytes,
-                deviceOffset);
+                destinationDeviceOffset);
         }
 
         /* ----- Vector read source ----- */
 
         clock_gettime(CLOCK_MONOTONIC, &sourceTimer1);
 
-        ssize_t srcBytesRead = preadv(sourceDevice,
-                                      srcVec,
-                                      chunksThisIter,
-                                      deviceOffset);
+        for (int i = 0; i < chunksThisIter; i++)
+        {
+            if (preadFull(sourceDevice,
+                          inBuffer[i],
+                          srcVec[i].iov_len,
+                          sourceDeviceOffset + (i * chunkSize),
+                          st) != 0)
+            {
+                PRINT_SYS_ERROR(st->miscSt.returnVal);
+                PRINT_ERROR("\nCould not read from source device\n");
+                exit(EXIT_FAILURE);
+            }
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &sourceTimer2);
-
-        if (srcBytesRead < 0)
-        {
-            PRINT_SYS_ERROR(errno);
-            PRINT_ERROR("\nCould not read from source device\n");
-            exit(EXIT_FAILURE);
-        }
 
         /* ----- Manual readahead for source ----- */
 
@@ -251,7 +276,7 @@ void diffDup(int sourceDevice,
                 chunkSize,
                 chunksThisIter,
                 remainingBytes,
-                deviceOffset);
+                sourceDeviceOffset);
         }
 
         /* ----- Process each chunk ----- */
@@ -275,7 +300,7 @@ void diffDup(int sourceDevice,
                 {
 
                     uint64_t absoluteOffset =
-                        deviceOffset + (i * chunkSize) + mismatchIndex;
+                        sourceDeviceOffset + (i * chunkSize) + mismatchIndex;
 
                     fprintf(stderr,
                             "Integrity check failed at absolute offset %" PRIu64
@@ -289,7 +314,7 @@ void diffDup(int sourceDevice,
                 if (pwriteFull(destinationDevice,
                                inBuffer[i],
                                thisChunk,
-                               deviceOffset + (i * chunkSize),
+                               destinationDeviceOffset + (i * chunkSize),
                                st) != 0)
                 {
 
@@ -306,7 +331,7 @@ void diffDup(int sourceDevice,
                     if (preadFull(destinationDevice,
                                   outBuffer[i],
                                   thisChunk,
-                                  deviceOffset + (i * chunkSize),
+                                  destinationDeviceOffset + (i * chunkSize),
                                   st) != 0)
                     {
 
@@ -324,7 +349,7 @@ void diffDup(int sourceDevice,
                     {
 
                         uint64_t absoluteOffset =
-                            deviceOffset + (i * chunkSize) + mismatchIndex;
+                            sourceDeviceOffset + (i * chunkSize) + mismatchIndex;
 
                         fprintf(stderr,
                                 "\nVerification failed at absolute offset %" PRIu64
@@ -343,17 +368,18 @@ void diffDup(int sourceDevice,
             remainingBytes -= thisChunk;
         }
 
-        deviceOffset += chunkSize * chunksThisIter;
+        sourceDeviceOffset += chunkSize * chunksThisIter;
+        destinationDeviceOffset += chunkSize * chunksThisIter;
 
         size_t bytesProcessed = chunkSize * chunksThisIter;
 
         posix_fadvise(sourceDevice,
-                      deviceOffset - bytesProcessed,
+                      sourceDeviceOffset - bytesProcessed,
                       bytesProcessed,
                       POSIX_FADV_DONTNEED);
 
         posix_fadvise(destinationDevice,
-                      deviceOffset - bytesProcessed,
+                      destinationDeviceOffset - bytesProcessed,
                       bytesProcessed,
                       POSIX_FADV_DONTNEED);
     }
@@ -376,7 +402,7 @@ void diffDup(int sourceDevice,
     printStats(totalBytesRead,
                totalBytesWritten,
                startTime);
-               printf("\n");
+    printf("\n");
 
     for (int i = 0; i < VECTOR_WIDTH; i++)
     {
