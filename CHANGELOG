@@ -5,6 +5,7 @@
 	Renamed variables
 	Changed usage syntax
 	Added versioning
+	Fixed offset handling bugs
 
 0.2.0
 	

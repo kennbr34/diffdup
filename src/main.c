@@ -146,34 +146,59 @@ int main(int argc, char *argv[])
 
     /* ----- Get Sizes ----- */
 
-    uint64_t sourceDeviceSize =
-        getDeviceSize(stateSt.deviceNameSt.sourceDeviceName);
-
-    uint64_t destinationDeviceSize =
-        getDeviceSize(stateSt.deviceNameSt.destinationDeviceName);
-
-    /* ----- Make sure destination is big enough ----- */
-
-    if (sourceDeviceSize > destinationDeviceSize && stateSt.optSt.verifyIntegrity != true)
-    {
-        fprintf(stderr,"\nDestination not large enough for source\n");
-        close(sourceDevice);
-        close(destinationDevice);
-        exit(EXIT_FAILURE);
-    }
-
-    /* ----- Make sure not seeking past end of source ----- */
-
-    uint64_t available = sourceDeviceSize - stateSt.configSt.sourceDeviceStart;
-
-    if (stateSt.optSt.outputAmountGiven &&
-        stateSt.configSt.outputAmount > available)
-    {
-        fprintf(stderr,"\nRequested amount exceeds available bytes from source offset\n");
-        close(sourceDevice);
-        close(destinationDevice);
-        exit(EXIT_FAILURE);
-    }
+	uint64_t sourceDeviceSize =
+	    getDeviceSize(stateSt.deviceNameSt.sourceDeviceName);
+	
+	uint64_t destinationDeviceSize =
+	    getDeviceSize(stateSt.deviceNameSt.destinationDeviceName);
+	
+	/* ----- Compute effective ranges ----- */
+	
+	uint64_t sourceStart = stateSt.configSt.sourceDeviceStart;
+	uint64_t destinationStart = stateSt.configSt.destinationDeviceStart;
+	
+	/* Validate source start */
+	if (sourceStart > sourceDeviceSize)
+	{
+	    fprintf(stderr, "\nSource start offset exceeds source size\n");
+	    close(sourceDevice);
+	    close(destinationDevice);
+	    exit(EXIT_FAILURE);
+	}
+	
+	/* Bytes available from source after offset */
+	uint64_t amountAvailable = sourceDeviceSize - sourceStart;
+	
+	/* Determine how much we actually intend to copy */
+	uint64_t amountNeeded = amountAvailable;
+	
+	if (stateSt.optSt.outputAmountGiven)
+	{
+	    if (stateSt.configSt.outputAmount > amountAvailable)
+	    {
+	        fprintf(stderr, "\nRequested amount exceeds available bytes from source offset\n");
+	        close(sourceDevice);
+	        close(destinationDevice);
+	        exit(EXIT_FAILURE);
+	    }
+	
+	    amountNeeded = stateSt.configSt.outputAmount;
+	}
+	
+	/* ----- Validate destination capacity ----- */
+	
+	/* Skip size enforcement during integrity-only verification */
+	if (!stateSt.optSt.verifyIntegrity)
+	{
+	    if (destinationStart > destinationDeviceSize ||
+	        amountNeeded > destinationDeviceSize - destinationStart)
+	    {
+	        fprintf(stderr, "\nDestination not large enough for requested write range\n");
+	        close(sourceDevice);
+	        close(destinationDevice);
+	        exit(EXIT_FAILURE);
+	    }
+	}
 
     /* ----- Get block sizes ----- */
 
