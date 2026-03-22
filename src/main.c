@@ -26,79 +26,79 @@ int main(int argc, char *argv[])
 
     installSignalHandlers();
 
-    struct dataStruct st = {0};
+    struct stateStruct stateSt = {0};
 
     /* ----- Set Default Parmaters ----- */
 
-    st.cryptSt.dataBufSize = DEFAULT_BUFFER_SIZE;
-    st.cryptSt.numVectors = DEFAULT_VECTOR_NUM;
-    st.optSt.tuneIO = false;
-    st.optSt.enableManualReadahead = true;
+    stateSt.configSt.dataBufSize = DEFAULT_BUFFER_SIZE;
+    stateSt.configSt.numVectors = DEFAULT_VECTOR_NUM;
+    stateSt.optSt.tuneIO = false;
+    stateSt.optSt.enableManualReadahead = true;
 
     /* ----- Set User-Configured Parmaters ----- */
 
-    parseOptions(argc, argv, &st);
+    parseOptions(argc, argv, &stateSt);
 
     /* ----- Automatically tune IO Parmaters ----- */
 
     int sourceDevice, destinationDevice;
 
-    if (st.optSt.tuneIO == true)
+    if (stateSt.optSt.tuneIO == true)
     {
 
-        sourceDevice = open(st.deviceNameSt.sourceDeviceName, O_RDONLY | O_CLOEXEC | O_DIRECT);
+        sourceDevice = open(stateSt.deviceNameSt.sourceDeviceName, O_RDONLY | O_CLOEXEC | O_DIRECT);
         if (sourceDevice < 0)
         {
-            PRINT_DEVICE_ERROR(st.deviceNameSt.sourceDeviceName, errno);
+            PRINT_DEVICE_ERROR(stateSt.deviceNameSt.sourceDeviceName, errno);
             exit(EXIT_FAILURE);
         }
 
-        destinationDevice = open(st.deviceNameSt.destinationDeviceName, O_RDWR | O_CLOEXEC | O_DIRECT);
+        destinationDevice = open(stateSt.deviceNameSt.destinationDeviceName, O_RDWR | O_CLOEXEC | O_DIRECT);
         if (destinationDevice < 0)
         {
-            PRINT_DEVICE_ERROR(st.deviceNameSt.destinationDeviceName, errno);
+            PRINT_DEVICE_ERROR(stateSt.deviceNameSt.destinationDeviceName, errno);
             close(sourceDevice);
             exit(EXIT_FAILURE);
         }
 
         printf("\nAutomatically tuning best parameters for source...\n");
-        autoTuneIO(sourceDevice, &st);
+        autoTuneIO(sourceDevice, &stateSt);
 
         printf("\nAutomatically tuning best parametersfor destination...\n");
-        autoTuneIO(destinationDevice, &st);
+        autoTuneIO(destinationDevice, &stateSt);
         close(sourceDevice);
         close(destinationDevice);
     }
 
     /* ----- Open Devices ----- */
 
-    sourceDevice = open(st.deviceNameSt.sourceDeviceName, O_RDONLY | O_CLOEXEC);
+    sourceDevice = open(stateSt.deviceNameSt.sourceDeviceName, O_RDONLY | O_CLOEXEC);
     if (sourceDevice < 0)
     {
-        PRINT_DEVICE_ERROR(st.deviceNameSt.sourceDeviceName, errno);
+        PRINT_DEVICE_ERROR(stateSt.deviceNameSt.sourceDeviceName, errno);
         exit(EXIT_FAILURE);
     }
 
-    if (st.optSt.sourceStartGiven == true)
+    if (stateSt.optSt.sourceStartGiven == true)
     {
-        lseek(sourceDevice, st.cryptSt.sourceDeviceStart, SEEK_SET);
+        lseek(sourceDevice, stateSt.configSt.sourceDeviceStart, SEEK_SET);
     }
     else
     {
         lseek(sourceDevice, 0L, SEEK_SET);
     }
 
-    destinationDevice = open(st.deviceNameSt.destinationDeviceName, O_RDWR | O_CLOEXEC);
+    destinationDevice = open(stateSt.deviceNameSt.destinationDeviceName, O_RDWR | O_CLOEXEC);
     if (destinationDevice < 0)
     {
-        PRINT_DEVICE_ERROR(st.deviceNameSt.destinationDeviceName, errno);
+        PRINT_DEVICE_ERROR(stateSt.deviceNameSt.destinationDeviceName, errno);
         close(sourceDevice);
         exit(EXIT_FAILURE);
     }
 
-    if (st.optSt.destinationStartGiven == true)
+    if (stateSt.optSt.destinationStartGiven == true)
     {
-        lseek(destinationDevice, st.cryptSt.destinationDeviceStart, SEEK_SET);
+        lseek(destinationDevice, stateSt.configSt.destinationDeviceStart, SEEK_SET);
     }
     else
     {
@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
         sourceDeviceStat.st_ino == destinationDeviceStat.st_ino)
     {
 
-        PRINT_ERROR("Source and destination refer to the same device");
+        fprintf(stderr,"\nSource and destination refer to the same device\n");
         exit(EXIT_FAILURE);
     }
 
@@ -147,16 +147,16 @@ int main(int argc, char *argv[])
     /* ----- Get Sizes ----- */
 
     uint64_t sourceDeviceSize =
-        getDeviceSize(st.deviceNameSt.sourceDeviceName);
+        getDeviceSize(stateSt.deviceNameSt.sourceDeviceName);
 
     uint64_t destinationDeviceSize =
-        getDeviceSize(st.deviceNameSt.destinationDeviceName);
+        getDeviceSize(stateSt.deviceNameSt.destinationDeviceName);
 
     /* ----- Make sure destination is big enough ----- */
 
-    if (sourceDeviceSize > destinationDeviceSize && st.optSt.verifyIntegrity != true)
+    if (sourceDeviceSize > destinationDeviceSize && stateSt.optSt.verifyIntegrity != true)
     {
-        PRINT_ERROR("Destination not large enough for source");
+        fprintf(stderr,"\nDestination not large enough for source\n");
         close(sourceDevice);
         close(destinationDevice);
         exit(EXIT_FAILURE);
@@ -164,12 +164,12 @@ int main(int argc, char *argv[])
 
     /* ----- Make sure not seeking past end of source ----- */
 
-    uint64_t available = sourceDeviceSize - st.cryptSt.sourceDeviceStart;
+    uint64_t available = sourceDeviceSize - stateSt.configSt.sourceDeviceStart;
 
-    if (st.optSt.outputAmountGiven &&
-        st.cryptSt.outputAmount > available)
+    if (stateSt.optSt.outputAmountGiven &&
+        stateSt.configSt.outputAmount > available)
     {
-        PRINT_ERROR("Requested amount exceeds available bytes from source offset");
+        fprintf(stderr,"\nRequested amount exceeds available bytes from source offset\n");
         close(sourceDevice);
         close(destinationDevice);
         exit(EXIT_FAILURE);
@@ -178,32 +178,32 @@ int main(int argc, char *argv[])
     /* ----- Get block sizes ----- */
 
     uint64_t sourceLogicalBlockSize =
-        getLogicalBlockSize(sourceDevice, st.deviceNameSt.sourceDeviceName);
+        getLogicalBlockSize(sourceDevice, stateSt.deviceNameSt.sourceDeviceName);
 
     uint64_t destinationLogicalBlockSize =
-        getLogicalBlockSize(destinationDevice, st.deviceNameSt.destinationDeviceName);
+        getLogicalBlockSize(destinationDevice, stateSt.deviceNameSt.destinationDeviceName);
 
     uint64_t requiredAlignment =
         leastCommonDenominator(sourceLogicalBlockSize, destinationLogicalBlockSize);
 
     /* Enforce minimum alignment */
 
-    if (st.cryptSt.dataBufSize < requiredAlignment)
+    if (stateSt.configSt.dataBufSize < requiredAlignment)
     {
-        st.cryptSt.dataBufSize = requiredAlignment;
+        stateSt.configSt.dataBufSize = requiredAlignment;
     }
     else
     {
         uint64_t remainder =
-            st.cryptSt.dataBufSize % requiredAlignment;
+            stateSt.configSt.dataBufSize % requiredAlignment;
 
         if (remainder != 0)
         {
-            st.cryptSt.dataBufSize += requiredAlignment - remainder;
+            stateSt.configSt.dataBufSize += requiredAlignment - remainder;
         }
     }
 
-    if (st.cryptSt.dataBufSize == 0)
+    if (stateSt.configSt.dataBufSize == 0)
     {
         PRINT_ERROR("dataBufSize resolved to zero after alignment");
         exit(EXIT_FAILURE);
@@ -214,19 +214,19 @@ int main(int argc, char *argv[])
     diffDup(sourceDevice,
             destinationDevice,
             sourceDeviceSize,
-            &st);
+            &stateSt);
 
-    if (st.optSt.verifyAfter)
+    if (stateSt.optSt.verifyAfter)
     {
         printf("\nVerifying written data...\n");
 
-        st.optSt.verifyIntegrity = true;
-        st.optSt.verifyWrites = false;
+        stateSt.optSt.verifyIntegrity = true;
+        stateSt.optSt.verifyWrites = false;
 
         diffDup(sourceDevice,
                 destinationDevice,
                 sourceDeviceSize,
-                &st);
+                &stateSt);
     }
 
     /* ----- Close Devices ----- */
@@ -236,9 +236,9 @@ int main(int argc, char *argv[])
 
     /* ----- Cleanup ----- */
 
-    DDFREE(free, st.deviceNameSt.sourceDeviceName);
+    DDFREE(free, stateSt.deviceNameSt.sourceDeviceName);
 
-    DDFREE(free, st.deviceNameSt.destinationDeviceName);
+    DDFREE(free, stateSt.deviceNameSt.destinationDeviceName);
 
     return EXIT_SUCCESS;
 }

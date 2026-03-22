@@ -1,0 +1,24 @@
+0.2.1
+
+	Cruft cleanup
+	Changed error messages
+	Renamed variables
+	Changed usage syntax
+	Added versioning
+
+0.2.0
+	
+	Added ability to specify beginning of source and destination devices to read and write to and from, and how much to write
+	Changed to using the preadFull and preadWrite wrappers intead of just preadv and pwritev
+	Fixed small formatting issues with status/error messages
+
+0.1.2
+
+	Cruft cleanup
+
+0.1.1
+
+	Fixed
+	- The progress reports not showing human-readable format for the written bytes
+	- Stat printing leaving the carriage returned with no line causing remnants to be left on the command prompt
+	- Bad indentation

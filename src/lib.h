@@ -21,6 +21,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#define MAJOR_VER 0
+#define MINOR_VER 2
+#define PATCH_VER 1
+
 #define _FILE_OFFSET_BITS 64
 #define MAX_FILE_NAME_SIZE PATH_MAX + NAME_MAX + 1
 #define DEFAULT_BUFFER_SIZE 64 * 1024
@@ -61,7 +65,7 @@ struct optionsStruct
 
 struct readaheadStruct
 {
-    size_t raChunks;
+    size_t readaheadChunks;
     double lastLatency;
 };
 
@@ -69,13 +73,13 @@ struct miscStruct
 {
     uint64_t returnVal;
 
-    struct readaheadStruct sourceRaSt;
-    struct readaheadStruct destinationRaSt;
+    struct readaheadStruct sourceReadaheadSt;
+    struct readaheadStruct destinationReadaheadSt;
 };
 
-struct dataStruct
+struct stateStruct
 {
-    struct configStruct cryptSt;
+    struct configStruct configSt;
     struct deviceNames deviceNameSt;
     struct optionsStruct optSt;
     struct miscStruct miscSt;
@@ -188,7 +192,7 @@ static inline uint64_t preadFull(int device,
                                  void *buffer,
                                  uint64_t bytesToRead,
                                  off_t deviceOffset,
-                                 struct dataStruct *st)
+                                 struct stateStruct *stateSt)
 {
     uint8_t *bufferPtr = buffer;
     uint64_t totalBytesRead = 0;
@@ -196,13 +200,13 @@ static inline uint64_t preadFull(int device,
     while (totalBytesRead < bytesToRead)
     {
 
-        struct iovec vec;
+        struct iovec vector;
 
-        vec.iov_base = bufferPtr + totalBytesRead;
-        vec.iov_len = bytesToRead - totalBytesRead;
+        vector.iov_base = bufferPtr + totalBytesRead;
+        vector.iov_len = bytesToRead - totalBytesRead;
 
         ssize_t bytesRead = preadv(device,
-                                   &vec,
+                                   &vector,
                                    1,
                                    deviceOffset + totalBytesRead);
 
@@ -212,13 +216,13 @@ static inline uint64_t preadFull(int device,
             if (errno == EINTR)
                 continue;
 
-            st->miscSt.returnVal = errno;
+            stateSt->miscSt.returnVal = errno;
             return errno;
         }
 
         if (bytesRead == 0)
         {
-            st->miscSt.returnVal = EIO;
+            stateSt->miscSt.returnVal = EIO;
             return EIO;
         }
 
@@ -232,7 +236,7 @@ static inline uint64_t pwriteFull(int device,
                                   void *buffer,
                                   uint64_t bytesToWrite,
                                   off_t deviceOffset,
-                                  struct dataStruct *st)
+                                  struct stateStruct *stateSt)
 {
     uint8_t *bufferPtr = buffer;
     uint64_t totalBytesWritten = 0;
@@ -240,13 +244,13 @@ static inline uint64_t pwriteFull(int device,
     while (totalBytesWritten < bytesToWrite)
     {
 
-        struct iovec vec;
+        struct iovec vector;
 
-        vec.iov_base = bufferPtr + totalBytesWritten;
-        vec.iov_len = bytesToWrite - totalBytesWritten;
+        vector.iov_base = bufferPtr + totalBytesWritten;
+        vector.iov_len = bytesToWrite - totalBytesWritten;
 
         ssize_t bytesWritten = pwritev(device,
-                                       &vec,
+                                       &vector,
                                        1,
                                        deviceOffset + totalBytesWritten);
 
@@ -256,13 +260,13 @@ static inline uint64_t pwriteFull(int device,
             if (errno == EINTR)
                 continue;
 
-            st->miscSt.returnVal = errno;
+            stateSt->miscSt.returnVal = errno;
             return errno;
         }
 
         if (bytesWritten == 0)
         {
-            st->miscSt.returnVal = EIO;
+            stateSt->miscSt.returnVal = EIO;
             return EIO;
         }
 
@@ -274,7 +278,7 @@ static inline uint64_t pwriteFull(int device,
 
 static inline void adaptive_readahead(
     int fd,
-    struct readaheadStruct *raSt,
+    struct readaheadStruct *readaheadSt,
     struct timespec t1,
     struct timespec t2,
     size_t chunkSize,
@@ -286,39 +290,39 @@ static inline void adaptive_readahead(
         (t2.tv_sec - t1.tv_sec) +
         (t2.tv_nsec - t1.tv_nsec) / 1e9;
 
-    if (raSt->lastLatency > 0)
+    if (readaheadSt->lastLatency > 0)
     {
 
-        double ratio = latency / raSt->lastLatency;
+        double ratio = latency / readaheadSt->lastLatency;
 
         /* Device getting slower → reduce pipeline slightly */
-        if (ratio > 1.30 && raSt->raChunks > 4)
+        if (ratio > 1.30 && readaheadSt->readaheadChunks > 4)
         {
 
-            size_t shrink = (raSt->raChunks / 8) + 1;
+            size_t shrink = (readaheadSt->readaheadChunks / 8) + 1;
 
-            if (raSt->raChunks > shrink)
-                raSt->raChunks -= shrink;
+            if (readaheadSt->readaheadChunks > shrink)
+                readaheadSt->readaheadChunks -= shrink;
             else
-                raSt->raChunks = 4;
+                readaheadSt->readaheadChunks = 4;
         }
 
         /* Device handling pipeline easily → grow faster */
-        else if (ratio < 0.80 && raSt->raChunks < 48)
+        else if (ratio < 0.80 && readaheadSt->readaheadChunks < 48)
         {
 
-            size_t growth = (raSt->raChunks / 4) + 1;
+            size_t growth = (readaheadSt->readaheadChunks / 4) + 1;
 
-            raSt->raChunks += growth;
+            readaheadSt->readaheadChunks += growth;
 
-            if (raSt->raChunks > 48)
-                raSt->raChunks = 48;
+            if (readaheadSt->readaheadChunks > 48)
+                readaheadSt->readaheadChunks = 48;
         }
     }
 
-    raSt->lastLatency = latency;
+    readaheadSt->lastLatency = latency;
 
-    uint64_t raBytes = chunkSize * raSt->raChunks;
+    uint64_t raBytes = chunkSize * readaheadSt->readaheadChunks;
 
     if (raBytes > remainingBytes)
         raBytes = remainingBytes;
@@ -386,12 +390,12 @@ uint64_t greatestCommonDenominator(uint64_t a, uint64_t b);
 uint64_t leastCommonDenominator(uint64_t a, uint64_t b);
 uint8_t printSyntax(char *arg);
 uint64_t parseBufferSize(const char *arg);
-void parseOptions(int argc, char *argv[], struct dataStruct *st);
+void parseOptions(int argc, char *argv[], struct stateStruct *stateSt);
 
 void diffDup(int sourceDevice,
              int destinationDevice,
              uint64_t sourceDeviceSize,
-             struct dataStruct *st);
+             struct stateStruct *stateSt);
 
 void installSignalHandlers(void);
 
@@ -399,4 +403,4 @@ int sigusr1Pending(void);
 int sigintCount(void);
 void clearSigusr1(void);
 
-void autoTuneIO(int fd, struct dataStruct *st);
+void autoTuneIO(int fd, struct stateStruct *stateSt);

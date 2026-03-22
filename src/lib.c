@@ -71,15 +71,15 @@ uint64_t getDeviceSize(const char *deviceName)
 
 uint64_t getLogicalBlockSize(int device, const char *deviceName)
 {
-    struct stat st;
+    struct stat deviceStat;
 
-    if (fstat(device, &st) != 0)
+    if (fstat(device, &deviceStat) != 0)
     {
         PRINT_DEVICE_ERROR(deviceName, errno);
         exit(EXIT_FAILURE);
     }
 
-    if (S_ISBLK(st.st_mode))
+    if (S_ISBLK(deviceStat.st_mode))
     {
 
         int logicalBlockSize = 0;
@@ -100,12 +100,12 @@ uint64_t getLogicalBlockSize(int device, const char *deviceName)
         return (uint64_t)logicalBlockSize;
     }
 
-    if (S_ISREG(st.st_mode))
+    if (S_ISREG(deviceStat.st_mode))
     {
 
         /* Use filesystem block size */
-        if (st.st_blksize > 0 && st.st_blksize <= 65536)
-            return (uint64_t)st.st_blksize;
+        if (deviceStat.st_blksize > 0 && deviceStat.st_blksize <= 65536)
+            return (uint64_t)deviceStat.st_blksize;
 
         return 4096;
     }
@@ -114,20 +114,20 @@ uint64_t getLogicalBlockSize(int device, const char *deviceName)
     exit(EXIT_FAILURE);
 }
 
-uint64_t greatestCommonDenominator(uint64_t a, uint64_t b)
+uint64_t greatestCommonDenominator(uint64_t number1, uint64_t number2)
 {
-    while (b != 0)
+    while (number2 != 0)
     {
-        uint64_t temp = b;
-        b = a % b;
-        a = temp;
+        uint64_t temp = number2;
+        number2 = number1 % number2;
+        number1 = temp;
     }
-    return a;
+    return number1;
 }
 
-uint64_t leastCommonDenominator(uint64_t a, uint64_t b)
+uint64_t leastCommonDenominator(uint64_t number1, uint64_t number2)
 {
-    return (a / greatestCommonDenominator(a, b)) * b;
+    return (number1 / greatestCommonDenominator(number1, number2)) * number2;
 }
 
 static volatile sig_atomic_t g_sigusr1 = 0;
@@ -184,32 +184,32 @@ static double getTimeSec()
     return ts.tv_sec + ts.tv_nsec / 1000000000.0;
 }
 
-static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex)
+static double benchmarkRead(int fd, size_t chunkSize, int numBuffers, int testIndex)
 {
-    struct iovec *iov = NULL;
-    void **buf = NULL;
+    struct iovec *ioVector = NULL;
+    void **buffer = NULL;
 
     uint64_t totalBytes = 256ULL * 1024 * 1024;
     uint64_t processed = 0;
 
-    iov = malloc(sizeof(struct iovec) * buffers);
-    buf = malloc(sizeof(void *) * buffers);
+    ioVector = malloc(sizeof(struct iovec) * numBuffers);
+    buffer = malloc(sizeof(void *) * numBuffers);
 
-    if (!iov || !buf)
+    if (!ioVector || !buffer)
         return 0;
 
     size_t pageSize = getpagesize();
 
-    for (int i = 0; i < buffers; i++)
+    for (int i = 0; i < numBuffers; i++)
     {
 
-        if (posix_memalign(&buf[i], pageSize, chunkSize) != 0)
+        if (posix_memalign(&buffer[i], pageSize, chunkSize) != 0)
             goto cleanup;
 
-        memset(buf[i], 0, chunkSize);
+        memset(buffer[i], 0, chunkSize);
 
-        iov[i].iov_base = buf[i];
-        iov[i].iov_len = chunkSize;
+        ioVector[i].iov_base = buffer[i];
+        ioVector[i].iov_len = chunkSize;
     }
 
     /* Avoid cached pages affecting benchmark */
@@ -226,7 +226,7 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
     while (processed < totalBytes)
     {
 
-        ssize_t r = readv(fd, iov, buffers);
+        ssize_t r = readv(fd, ioVector, numBuffers);
 
         if (r <= 0)
             break;
@@ -241,18 +241,18 @@ static double benchmarkRead(int fd, size_t chunkSize, int buffers, int testIndex
 
 cleanup:
 
-    if (buf)
+    if (buffer)
     {
-        for (int i = 0; i < buffers; i++)
+        for (int i = 0; i < numBuffers; i++)
         {
-            if (buf[i])
-                free(buf[i]);
+            if (buffer[i])
+                free(buffer[i]);
         }
-        free(buf);
+        free(buffer);
     }
 
-    if (iov)
-        free(iov);
+    if (ioVector)
+        free(ioVector);
 
     if (processed == 0)
         return 0;
@@ -260,7 +260,7 @@ cleanup:
     return processed / (end - start);
 }
 
-void autoTuneIO(int fd, struct dataStruct *st)
+void autoTuneIO(int fd, struct stateStruct *stateSt)
 {
     size_t chunkOptions[] = {
         64 * 1024,
@@ -303,11 +303,11 @@ void autoTuneIO(int fd, struct dataStruct *st)
                 bestChunkIndex = c;
                 bestBufferIndex = b;
 
-                if (st->optSt.dataBufSizeGiven == false)
-                    st->cryptSt.dataBufSize = chunkOptions[bestChunkIndex];
+                if (stateSt->optSt.dataBufSizeGiven == false)
+                    stateSt->configSt.dataBufSize = chunkOptions[bestChunkIndex];
 
-                if (st->optSt.numVectorsGiven == false)
-                    st->cryptSt.numVectors = bufferOptions[bestBufferIndex];
+                if (stateSt->optSt.numVectorsGiven == false)
+                    stateSt->configSt.numVectors = bufferOptions[bestBufferIndex];
             }
         }
     }
@@ -319,7 +319,7 @@ void autoTuneIO(int fd, struct dataStruct *st)
     /* --- Manual readahead benchmark --- */
 
     size_t testSize = 128 * 1024 * 1024; // 128MB
-    uint8_t *buf = malloc(chunk);
+    uint8_t *buffer = malloc(chunk);
 
     off_t offset = 0;
     off_t end = testSize;
@@ -331,47 +331,47 @@ void autoTuneIO(int fd, struct dataStruct *st)
     {
 
         /* pipeline prefetch ~4 chunks ahead */
-        off_t raOffset = offset + (chunk * 16);
-        readahead(fd, raOffset, chunk * 16);
+        off_t readaheadOffset = offset + (chunk * 16);
+        readahead(fd, readaheadOffset, chunk * 16);
 
-        pread(fd, buf, chunk, offset);
+        pread(fd, buffer, chunk, offset);
 
         offset += chunk;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &endt);
 
-    free(buf);
+    free(buffer);
 
     double seconds =
         (endt.tv_sec - start.tv_sec) +
         (endt.tv_nsec - start.tv_nsec) / 1e9;
 
-    double raMBps = (testSize / seconds) / (1024.0 * 1024.0);
+    double readaheadMBps = (testSize / seconds) / (1024.0 * 1024.0);
 
-    double improvement = raMBps / baselineMBps;
+    double improvement = readaheadMBps / baselineMBps;
 
-    if (st->optSt.enableManualReadahead == true)
+    if (stateSt->optSt.enableManualReadahead == true)
     {
 
         if (improvement >= 1.01)
-            st->optSt.enableManualReadahead = true;
+            stateSt->optSt.enableManualReadahead = true;
         else
-            st->optSt.enableManualReadahead = false;
+            stateSt->optSt.enableManualReadahead = false;
     }
 
-    if (st->optSt.dataBufSizeGiven || st->optSt.numVectorsGiven)
+    if (stateSt->optSt.dataBufSizeGiven || stateSt->optSt.numVectorsGiven)
         printf("(USER CONFIGURED)");
 
     printf("\nSelected: chunk=%zu buffers=%d\n",
-           st->cryptSt.dataBufSize,
-           st->cryptSt.numVectors);
+           stateSt->configSt.dataBufSize,
+           stateSt->configSt.numVectors);
 
     printf("Detected throughput (baseline): %.2f MB/s\n", baselineMBps);
-    printf("Detected throughput (manual readahead): %.2f MB/s\n", raMBps);
+    printf("Detected throughput (manual readahead): %.2f MB/s\n", readaheadMBps);
     printf("Readahead improvement: %.2fx\n", improvement);
 
-    if (st->optSt.enableManualReadahead)
+    if (stateSt->optSt.enableManualReadahead)
         printf("Manual readahead ENABLED (prefetch improves throughput)\n");
     else
         printf("Manual readahead DISABLED (no measurable benefit)\n");
@@ -383,7 +383,7 @@ uint8_t printSyntax(char *arg)
 \nUse: \
 \n\n%s -s source -d destination [-p|-t|-i|-w|-v|-r] [-n num] [-b num[b|k|m|g] [-S|-D|-C num[b|k|m|g|t]]\
 \n-p,--progress - periodically print progress\
-\n-t,--tune-parameters - automatically benchmark and set optimal buffer sizes and I/O vectors and enable readahead for non-USB devices\
+\n-t,--tune-parameters - automatically benchmark and set optimal buffer sizes and number of buffers and enable readahead for non-USB devices\
 \n-i,--verify-integrity - verify that destination matches source\
 \n-w,--verify-writes - verify when writes are made for extra assurance\
 \n-v,--verify-integrity-after - verify that destination matches source after duplication\
@@ -391,7 +391,7 @@ uint8_t printSyntax(char *arg)
 \n-d,--destination-device - destination device.\
 \n\tThe following options will override default or auto-tuned parameters\
 \n-r,--toggle-readahead [yes|no|on|off] - toggle manual eadahead\
-\n-n,--vector-num - number of I/O vectors\
+\n-n,--buffer-num - number of I/O buffers\
 \n-b,--buffer-size - num[b|k|m|g]\
 \n\t Size of input/output buffers to use in bytes, kilobytes, megabytes, or gigabytes\
 \n-S,--source-start - num[b|k|m|g|t]\
@@ -400,8 +400,9 @@ uint8_t printSyntax(char *arg)
 \n\t The start of destination device to begin duplicating to, given in kilobytes, megabytes, gigabytes or terabytes\
 \n-C,--output-amount - num[b|k|m|g|t]\
 \n\t The amount of source to duplicate to destination, given in bytes, kilobytes, megabytes, gigabytes or terabytes\
+\n Version %d.%d.%d\
 \n",
-           arg);
+           arg, MAJOR_VER, MINOR_VER, PATCH_VER);
     return EXIT_FAILURE;
 }
 
@@ -447,7 +448,7 @@ uint64_t parseBufferSize(const char *arg)
 void parseOptions(
     int argc,
     char *argv[],
-    struct dataStruct *st)
+    struct stateStruct *stateSt)
 {
     int c;
     int errflg = 0;
@@ -468,7 +469,7 @@ void parseOptions(
             {"source-device", required_argument, 0, 's'},
             {"destination-device", required_argument, 0, 'd'},
             {"toggle-readahead", required_argument, 0, 'r'},
-            {"vector-num", required_argument, 0, 'n'},
+            {"buffer-num", required_argument, 0, 'n'},
             {"buffer-size", required_argument, 0, 'b'},
             {"source-start", required_argument, 0, 'S'},
             {"destination-start", required_argument, 0, 'D'},
@@ -488,19 +489,19 @@ void parseOptions(
             exit(EXIT_FAILURE);
             break;
         case 'p':
-            st->optSt.printProgress = true;
+            stateSt->optSt.printProgress = true;
             break;
         case 't':
-            st->optSt.tuneIO = true;
+            stateSt->optSt.tuneIO = true;
             break;
         case 'i':
-            st->optSt.verifyIntegrity = true;
+            stateSt->optSt.verifyIntegrity = true;
             break;
         case 'w':
-            st->optSt.verifyWrites = true;
+            stateSt->optSt.verifyWrites = true;
             break;
         case 'v':
-            st->optSt.verifyAfter = true;
+            stateSt->optSt.verifyAfter = true;
             break;
         case 's':
             if (optarg[0] == '-' && strlen(optarg) == 2)
@@ -511,8 +512,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.sourceDeviceGiven = true;
-                st->deviceNameSt.sourceDeviceName = strdup(optarg);
+                stateSt->optSt.sourceDeviceGiven = true;
+                stateSt->deviceNameSt.sourceDeviceName = strdup(optarg);
             }
             break;
         case 'd':
@@ -524,8 +525,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.destinationDeviceGiven = true;
-                st->deviceNameSt.destinationDeviceName = strdup(optarg);
+                stateSt->optSt.destinationDeviceGiven = true;
+                stateSt->deviceNameSt.destinationDeviceName = strdup(optarg);
             }
             break;
         case 'r':
@@ -539,11 +540,11 @@ void parseOptions(
             {
                 if (strncasecmp(optarg, "yes", 3) == 0 || strncasecmp(optarg, "on", 3) == 0)
                 {
-                    st->optSt.enableManualReadahead = true;
+                    stateSt->optSt.enableManualReadahead = true;
                 }
                 else if (strncasecmp(optarg, "no", 3) == 0 || strncasecmp(optarg, "off", 3) == 0)
                 {
-                    st->optSt.enableManualReadahead = false;
+                    stateSt->optSt.enableManualReadahead = false;
                 }
                 else
                 {
@@ -561,8 +562,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.numVectorsGiven = true;
-                st->cryptSt.numVectors = atol(optarg);
+                stateSt->optSt.numVectorsGiven = true;
+                stateSt->configSt.numVectors = atol(optarg);
             }
             break;
         case 'b':
@@ -574,8 +575,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.dataBufSizeGiven = true;
-                st->cryptSt.dataBufSize = parseBufferSize(optarg);
+                stateSt->optSt.dataBufSizeGiven = true;
+                stateSt->configSt.dataBufSize = parseBufferSize(optarg);
             }
             break;
         case 'S':
@@ -587,8 +588,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.sourceStartGiven = true;
-                st->cryptSt.sourceDeviceStart = parseBufferSize(optarg);
+                stateSt->optSt.sourceStartGiven = true;
+                stateSt->configSt.sourceDeviceStart = parseBufferSize(optarg);
             }
             break;
         case 'D':
@@ -600,8 +601,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.destinationStartGiven = true;
-                st->cryptSt.destinationDeviceStart = parseBufferSize(optarg);
+                stateSt->optSt.destinationStartGiven = true;
+                stateSt->configSt.destinationDeviceStart = parseBufferSize(optarg);
             }
             break;
         case 'C':
@@ -613,8 +614,8 @@ void parseOptions(
             }
             else
             {
-                st->optSt.outputAmountGiven = true;
-                st->cryptSt.outputAmount = parseBufferSize(optarg);
+                stateSt->optSt.outputAmountGiven = true;
+                stateSt->configSt.outputAmount = parseBufferSize(optarg);
             }
             break;
         case ':':
@@ -627,19 +628,19 @@ void parseOptions(
         }
     }
 
-    if (!st->optSt.sourceDeviceGiven || !st->optSt.destinationDeviceGiven)
+    if (!stateSt->optSt.sourceDeviceGiven || !stateSt->optSt.destinationDeviceGiven)
     {
         fprintf(stderr, "Must specify a source and destination device\n");
         errflg++;
     }
 
     /* Only compare if both were actually provided */
-    if (st->optSt.sourceDeviceGiven &&
-        st->optSt.destinationDeviceGiven)
+    if (stateSt->optSt.sourceDeviceGiven &&
+        stateSt->optSt.destinationDeviceGiven)
     {
 
-        if (strcmp(st->deviceNameSt.sourceDeviceName,
-                   st->deviceNameSt.destinationDeviceName) == 0)
+        if (strcmp(stateSt->deviceNameSt.sourceDeviceName,
+                   stateSt->deviceNameSt.destinationDeviceName) == 0)
         {
 
             fprintf(stderr, "Source and destination device are the same\n");

@@ -21,24 +21,24 @@
 void diffDup(int sourceDevice,
              int destinationDevice,
              uint64_t sourceDeviceSize,
-             struct dataStruct *st)
+             struct stateStruct *stateSt)
 {
-    uint64_t available = sourceDeviceSize - st->cryptSt.sourceDeviceStart;
+    uint64_t bytesAvailable = sourceDeviceSize - stateSt->configSt.sourceDeviceStart;
 
     uint64_t remainingBytes;
 
-    if (st->optSt.outputAmountGiven)
-        remainingBytes = st->cryptSt.outputAmount;
+    if (stateSt->optSt.outputAmountGiven)
+        remainingBytes = stateSt->configSt.outputAmount;
     else
-        remainingBytes = available;
+        remainingBytes = bytesAvailable;
 
-    if (remainingBytes > available)
-        remainingBytes = available;
+    if (remainingBytes > bytesAvailable)
+        remainingBytes = bytesAvailable;
 
-    uint64_t chunkSize = st->cryptSt.dataBufSize;
+    uint64_t chunkSize = stateSt->configSt.dataBufSize;
     size_t pageSize = getpagesize();
 
-    const int VECTOR_WIDTH = st->cryptSt.numVectors;
+    const int VECTOR_WIDTH = stateSt->configSt.numVectors;
     uint8_t **inBuffer = NULL;
     uint8_t **outBuffer = NULL;
 
@@ -73,13 +73,13 @@ void diffDup(int sourceDevice,
         memset(outBuffer[i], 0, chunkSize);
     }
 
-    struct iovec *srcVec = NULL;
-    struct iovec *dstVec = NULL;
+    struct iovec *sourceVector = NULL;
+    struct iovec *destinationVector = NULL;
 
-    srcVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
-    dstVec = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
+    sourceVector = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
+    destinationVector = malloc(sizeof(struct iovec) * VECTOR_WIDTH);
 
-    if (!srcVec || !dstVec)
+    if (!sourceVector || !destinationVector)
     {
         PRINT_SYS_ERROR(errno);
         PRINT_ERROR("Could not allocate iovec arrays");
@@ -87,15 +87,15 @@ void diffDup(int sourceDevice,
     }
 
     off_t sourceDeviceOffset = 0;
-    if (st->optSt.sourceStartGiven == true)
+    if (stateSt->optSt.sourceStartGiven == true)
     {
-        sourceDeviceOffset = st->cryptSt.sourceDeviceStart;
+        sourceDeviceOffset = stateSt->configSt.sourceDeviceStart;
     }
 
     off_t destinationDeviceOffset = 0;
-    if (st->optSt.destinationStartGiven == true)
+    if (stateSt->optSt.destinationStartGiven == true)
     {
-        destinationDeviceOffset = st->cryptSt.destinationDeviceStart;
+        destinationDeviceOffset = stateSt->configSt.destinationDeviceStart;
     }
 
     uint64_t totalBytesRead = 0;
@@ -113,11 +113,11 @@ void diffDup(int sourceDevice,
     struct timespec sourceTimer1, sourceTimer2;
     struct timespec destinationTimer1, destinationTimer2;
 
-    st->miscSt.sourceRaSt.raChunks = 8;
-    st->miscSt.sourceRaSt.lastLatency = 0;
+    stateSt->miscSt.sourceReadaheadSt.readaheadChunks = 8;
+    stateSt->miscSt.sourceReadaheadSt.lastLatency = 0;
 
-    st->miscSt.destinationRaSt.raChunks = 8;
-    st->miscSt.destinationRaSt.lastLatency = 0;
+    stateSt->miscSt.destinationReadaheadSt.readaheadChunks = 8;
+    stateSt->miscSt.destinationReadaheadSt.lastLatency = 0;
 
     int gracefulStop = 0;
 
@@ -126,7 +126,7 @@ void diffDup(int sourceDevice,
 
         /* ----- Periodic progress display (low-overhead) ----- */
 
-        if (st->optSt.printProgress)
+        if (stateSt->optSt.printProgress)
         {
 
             struct timespec now;
@@ -200,11 +200,11 @@ void diffDup(int sourceDevice,
             if (thisChunk > remainingBytes - (i * chunkSize))
                 thisChunk = remainingBytes - (i * chunkSize);
 
-            srcVec[i].iov_base = inBuffer[i];
-            srcVec[i].iov_len = thisChunk;
+            sourceVector[i].iov_base = inBuffer[i];
+            sourceVector[i].iov_len = thisChunk;
 
-            dstVec[i].iov_base = outBuffer[i];
-            dstVec[i].iov_len = thisChunk;
+            destinationVector[i].iov_base = outBuffer[i];
+            destinationVector[i].iov_len = thisChunk;
         }
 
         /* ----- Vector read destination ----- */
@@ -215,11 +215,11 @@ void diffDup(int sourceDevice,
         {
             if (preadFull(destinationDevice,
                           outBuffer[i],
-                          dstVec[i].iov_len,
+                          destinationVector[i].iov_len,
                           destinationDeviceOffset + (i * chunkSize),
-                          st) != 0)
+                          stateSt) != 0)
             {
-                PRINT_SYS_ERROR(st->miscSt.returnVal);
+                PRINT_SYS_ERROR(stateSt->miscSt.returnVal);
                 PRINT_ERROR("\nCould not read from destination device\n");
                 exit(EXIT_FAILURE);
             }
@@ -229,12 +229,12 @@ void diffDup(int sourceDevice,
 
         /* ----- Manual readahead for destination ----- */
 
-        if (st->optSt.enableManualReadahead)
+        if (stateSt->optSt.enableManualReadahead)
         {
 
             adaptive_readahead(
                 destinationDevice,
-                &st->miscSt.destinationRaSt,
+                &stateSt->miscSt.destinationReadaheadSt,
                 destinationTimer1,
                 destinationTimer2,
                 chunkSize,
@@ -251,11 +251,11 @@ void diffDup(int sourceDevice,
         {
             if (preadFull(sourceDevice,
                           inBuffer[i],
-                          srcVec[i].iov_len,
+                          sourceVector[i].iov_len,
                           sourceDeviceOffset + (i * chunkSize),
-                          st) != 0)
+                          stateSt) != 0)
             {
-                PRINT_SYS_ERROR(st->miscSt.returnVal);
+                PRINT_SYS_ERROR(stateSt->miscSt.returnVal);
                 PRINT_ERROR("\nCould not read from source device\n");
                 exit(EXIT_FAILURE);
             }
@@ -265,12 +265,12 @@ void diffDup(int sourceDevice,
 
         /* ----- Manual readahead for source ----- */
 
-        if (st->optSt.enableManualReadahead)
+        if (stateSt->optSt.enableManualReadahead)
         {
 
             adaptive_readahead(
                 sourceDevice,
-                &st->miscSt.sourceRaSt,
+                &stateSt->miscSt.sourceReadaheadSt,
                 sourceTimer1,
                 sourceTimer2,
                 chunkSize,
@@ -284,7 +284,7 @@ void diffDup(int sourceDevice,
         for (int i = 0; i < chunksThisIter; i++)
         {
 
-            uint64_t thisChunk = srcVec[i].iov_len;
+            uint64_t thisChunk = sourceVector[i].iov_len;
 
             totalBytesRead += thisChunk;
 
@@ -296,7 +296,7 @@ void diffDup(int sourceDevice,
             if (blocksDiffer)
             {
 
-                if (st->optSt.verifyIntegrity)
+                if (stateSt->optSt.verifyIntegrity)
                 {
 
                     uint64_t absoluteOffset =
@@ -315,27 +315,27 @@ void diffDup(int sourceDevice,
                                inBuffer[i],
                                thisChunk,
                                destinationDeviceOffset + (i * chunkSize),
-                               st) != 0)
+                               stateSt) != 0)
                 {
 
-                    PRINT_SYS_ERROR(st->miscSt.returnVal);
+                    PRINT_SYS_ERROR(stateSt->miscSt.returnVal);
                     PRINT_ERROR("Could not write to destination device");
                     exit(EXIT_FAILURE);
                 }
 
                 totalBytesWritten += thisChunk;
 
-                if (st->optSt.verifyWrites)
+                if (stateSt->optSt.verifyWrites)
                 {
 
                     if (preadFull(destinationDevice,
                                   outBuffer[i],
                                   thisChunk,
                                   destinationDeviceOffset + (i * chunkSize),
-                                  st) != 0)
+                                  stateSt) != 0)
                     {
 
-                        PRINT_SYS_ERROR(st->miscSt.returnVal);
+                        PRINT_SYS_ERROR(stateSt->miscSt.returnVal);
                         PRINT_ERROR("\nCould not re-read destination for verification\n");
                         exit(EXIT_FAILURE);
                     }
@@ -386,7 +386,7 @@ void diffDup(int sourceDevice,
 
     /* ----- Final sync ----- */
 
-    if (!st->optSt.verifyIntegrity && totalBytesWritten > 0)
+    if (!stateSt->optSt.verifyIntegrity && totalBytesWritten > 0)
     {
 
         if (fsync(destinationDevice) != 0)
@@ -413,10 +413,10 @@ void diffDup(int sourceDevice,
     DDFREE(free, inBuffer);
     DDFREE(free, outBuffer);
 
-    DDFREE(free, srcVec);
-    DDFREE(free, dstVec);
+    DDFREE(free, sourceVector);
+    DDFREE(free, destinationVector);
 
-    if (st->optSt.verifyIntegrity)
+    if (stateSt->optSt.verifyIntegrity)
     {
         printf("\nIntegrity verification completed successfully.\n");
     }
